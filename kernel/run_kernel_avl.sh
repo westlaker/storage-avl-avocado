@@ -270,21 +270,88 @@ sub_integrity(){ local dev="" start="0" size="" out=""
   fio --name=verify --filename="$dev" --rw=write --bs=128k --ioengine=libaio       --iodepth=64 --direct=1 --offset="$start" --size="$size"       --verify=sha256 --do_verify=1 --verify_pattern=0xDeadBeef       --group_reporting=1 > "$out/verify.txt" 2> "$out/verify.txt.err" || true
   msg "Results -> $out"; }
 
-sub_thermal(){ local dev="" secs=120 interval=2 out=""
-  while [[ $# -gt 0 ]]; do case "$1" in
-    --dev) dev="$2"; shift 2;; 
-    --time) secs="$2"; shift 2;; 
-    --interval) interval="$2"; shift 2;;
-    --out) out="$2"; shift 2;; 
-    *) die "Unknown option: $1";; esac; 
+nvme_ctrl_from_ns() {
+  # /dev/nvme0n1 -> /dev/nvme0
+  local dev="$1"
+  local base
+  base="$(basename "$dev")"
+  if [[ "$base" =~ ^(nvme[0-9]+)n[0-9]+$ ]]; then
+    echo "/dev/${BASH_REMATCH[1]}"
+  else
+    echo "$dev"
+  fi
+}
+
+read_nvme_temp_c() {
+  # Print integer Celsius or empty string if unavailable.
+  local ns_dev="$1"
+  local ctrl_dev ctrl_name temp
+
+  ctrl_dev="$(nvme_ctrl_from_ns "$ns_dev")"
+  ctrl_name="$(basename "$ctrl_dev")"
+  temp=""
+
+  # Prefer nvme-cli smart-log (usually needs root)
+  if command -v nvme >/dev/null 2>&1; then
+  #  temp="$($SUDO nvme smart-log "$ctrl_dev" 2>/dev/null \
+  #    | awk -F: '/^temperature/ {gsub(/[^0-9]/,"",$2); if ($2!="") print $2; exit}' || true)"
+    temp="$($SUDO nvme smart-log "$ctrl_dev" 2>/dev/null \
+      | awk 'BEGIN{IGNORECASE=1}
+         /temperature/ {
+           if (match($0, /([0-9]+)[[:space:]]*°C/, m)) {
+             print m[1]; exit
+           }
+         }' || true)"
+  fi
+
+  # Fallback: sysfs hwmon temp (millidegree C)
+  if [[ -z "$temp" ]]; then
+    local f v
+    for f in /sys/class/nvme/"$ctrl_name"/device/hwmon/hwmon*/temp*_input; do
+      [[ -r "$f" ]] || continue
+      v="$(cat "$f" 2>/dev/null || true)"
+      if [[ "$v" =~ ^[0-9]+$ ]]; then
+        temp="$(( v / 1000 ))"
+        break
+      fi
+    done
+  fi
+
+  printf '%s' "$temp"
+}
+
+sub_thermal() {
+  local dev="" secs=120 interval=2 out=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dev) dev="$2"; shift 2;;
+      --time) secs="$2"; shift 2;;
+      --interval) interval="$2"; shift 2;;
+      --out) out="$2"; shift 2;;
+      *) die "Unknown option: $1";;
+    esac
   done
-  [ -n "$dev" ] || die "--dev required"; is_block "$dev" || die "Not a block device: $dev"
-  local ctrl; ctrl="$(ctrl_of_ns "$dev")"; out="${out:-$RES/thermal-$(basename "$dev")-$(ts)}"; mkdir -p "$out"
-  echo "ts,temp_c" > "$out/temps.csv"
+
+  [[ -n "$dev" ]] || die "--dev required"
+  is_block "$dev" || die "Not a block device: $dev"
+
+  out="${out:-$RES/thermal-$(basename "$dev")-$(ts)}"
+  mkdir -p "$out" || die "Failed to create output dir: $out"
+
+  # Always create file + header
+  printf "ts,temp_c\n" > "$out/temps.csv" || die "Cannot write $out/temps.csv"
+
+  local i temp now
   for ((i=0; i<secs; i+=interval)); do
-    local temp; temp="$($SUDO nvme smart-log "$ctrl" 2>/dev/null | awk '/^temperature/ {print $2; exit}')"
-    echo "$(date +%s),${temp:-}" >> "$out/temps.csv"; sleep "$interval"
-  done; msg "Results -> $out"; }
+    now="$(date +%s)"
+    temp="$(read_nvme_temp_c "$dev" || true)"
+    printf "%s,%s\n" "$now" "${temp:-}" >> "$out/temps.csv" || true
+    sleep "$interval"
+  done
+
+  msg "Results -> $out"
+}
 
 usage(){ cat <<'EOF'
 Usage: run_kernel_avl.sh <subcmd> [options]
