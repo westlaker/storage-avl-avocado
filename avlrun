@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Simple runner for AVL scripts under Avocado (no mux, no YAML, no injection).
+# Usage:
+#   ./avlrun <script> [args...]
+# Examples:
+#   ./avlrun kernel/run_kernel_avl.sh list
+#   ./avlrun kernel/run_kernel_avl.sh health --dev /dev/nvme0n1
+#   ./avlrun spdk/run_spdk.sh perf --dev /dev/nvme1n1 --rw randread --qd 32
+set -euo pipefail
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: $0 <script> [args...]"
+  exit 2
+fi
+
+export AVL_SCRIPT="$1"
+shift
+# Preserve args exactly as typed (spaces kept). Quoting handled by bash.
+export AVL_ARGS="$*"
+
+exec /home/ubuntu/venv-avocado/bin/avocado run avocado/tests/avl_script_test.py

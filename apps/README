@@ -1,0 +1,24 @@
+# Fresh device, make ext4, reinit cluster, run 120s
+./app_pgbench.sh --dev /dev/nvme0n1 --mkfs ext4 --reinit --scale 100 --clients 32 --threads 32 --time 120
+
+# Already mounted volume; re-use cluster (or --reinit to recreate)
+./app_pgbench.sh --scale 200 --clients 64 --threads 64 --time 180
+
+if you do not have db_bench yet, build it once:
+sudo apt-get update
+sudo apt-get install -y build-essential cmake git \
+    libsnappy-dev zlib1g-dev libbz2-dev liblz4-dev libzstd-dev
+git clone --depth=1 https://github.com/facebook/rocksdb.git
+cd rocksdb
+make -j"$(nproc)" static_lib db_bench
+sudo cp db_bench /usr/local/bin/
+
+example run:
+# Fresh device, make ext4, wipe RocksDB dirs, then run
+./app_rocksdb.sh --dev /dev/nvme0n1 --mkfs ext4 --reinit \
+    --bench fillrandom,readrandom --num 10000000 --threads 16 --duration 60
+
+# Heavier mix
+./app_rocksdb.sh --bench fillrandom,readrandom,readrandomwriterandom \
+    --threads 32 --duration 120 --compression lz4 --cache_mb 2048
+

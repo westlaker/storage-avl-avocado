@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+#
+# Minimal Avocado wrapper for AVL storage scripts.
+# It runs an existing script verbatim; all options/output remain unchanged.
+#
+# How to run:
+#   ./avlrun <script> [args...]
+# Example:
+#   ./avlrun kernel/run_kernel_avl.sh list
+#
+import os
+import shlex
+import subprocess
+from pathlib import Path
+
+from avocado import Test
+
+
+class AVLScript(Test):
+    def test(self):
+        rel_script = (os.environ.get("AVL_SCRIPT") or "").strip()
+        args = os.environ.get("AVL_ARGS") or ""
+
+        if not rel_script:
+            self.fail("Missing AVL_SCRIPT. Use: ./avlrun <script> [args...]")
+
+        # Repository root is two levels above this file: avocado/tests -> repo root
+        repo_root = Path(__file__).resolve().parents[2]
+
+        # Resolve script path relative to repo root unless absolute
+        script_path = Path(rel_script)
+        if not script_path.is_absolute():
+            script_path = (repo_root / script_path)
+        script_path = script_path.resolve()
+
+        if not script_path.exists():
+            self.fail(f"Script not found: {script_path}")
+
+        if not os.access(str(script_path), os.X_OK):
+            self.fail(f"Script is not executable: {script_path} (try: chmod +x {rel_script})")
+
+        argv = [str(script_path)]
+        if args:
+            argv += shlex.split(args)
+
+        self.log.info("Repo root: %s", str(repo_root))
+        self.log.info("Running: %s", " ".join(shlex.quote(a) for a in argv))
+
+        proc = subprocess.run(
+            argv,
+            cwd=str(repo_root),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+
+        # Always include the script output in Avocado logs
+        if proc.stdout:
+            self.log.info("---- script output begin ----\n%s\n---- script output end ----",
+                          proc.stdout.rstrip())
+
+        if proc.returncode != 0:
+            self.fail(f"Script exited with non-zero status: {proc.returncode}")
