@@ -45,8 +45,8 @@ Kernel Test:
  ./avlrun kernel/run_kernel_avl.sh identify --dev /dev/nvme0n1
  ./avlrun kernel/run_kernel_avl.sh health --dev /dev/nvme0n1
  ./avlrun kernel/run_kernel_avl.sh perf --dev /dev/nvme0n1
- ./avlrun kernel/run_kernel_avl.sh fio --dev /dev/nvme0n1
- ./avlrun kernel/run_kernel_avl.sh integrity --dev /dev/nvme0n1 --size 8G
+ ./avlrun kernel/run_kernel_avl.sh fio --dev /dev/nvme0n1 --rw randrw --bs 4k --iodepth 64 --numjobs 4 --time 60 --raw --allow-destructive
+ ./avlrun kernel/run_kernel_avl.sh integrity --dev /dev/nvme0n1 --size 100G
  ./avlrun kernel/run_kernel_avl.sh thermal --dev /dev/nvme0n1
 ```
 

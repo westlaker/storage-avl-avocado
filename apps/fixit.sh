@@ -9,6 +9,6 @@ sudo chown -R postgres:postgres /mnt/nvme_test
 
 # recommended permissions
 sudo chmod 700 /mnt/nvme_test
-uid=120(postgres) gid=127(postgres) groups=127(postgres),126(ssl-cert)
+#uid=120(postgres) gid=127(postgres) groups=127(postgres),126(ssl-cert)
 sudo rm -f /mnt/nvme_test/pg.log
 
